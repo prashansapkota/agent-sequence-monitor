@@ -1,0 +1,90 @@
+# Example sequence policy exercising all four constraint types.
+#
+# Every rule here describes damage that NO single tool call commits. Each
+# individual invocation below would be permitted by a per-call engine;
+# the violation exists only in the sequence.
+
+version: "1.0"
+name: data-handling-sequence-policy
+description: >
+  Sequence constraints for an agent with read access to customer data,
+  file storage, a messaging API, and a metered billing API.
+
+rules:
+  # --- cumulative aggregate -------------------------------------------
+  - name: bulk-customer-read
+    type: cumulative
+    actions: [customer_db.query]
+    aggregate: sum          # sums event.magnitude (rows returned)
+    threshold: 5000
+    window: 1h
+    response: break
+    message: >
+      Cumulative customer records read exceeds the hourly exfiltration
+      threshold. Each query was individually permitted.
+
+  - name: distinct-table-sprawl
+    type: cumulative
+    actions: [customer_db.query]
+    aggregate: distinct     # counts distinct event.resource values
+    threshold: 8
+    window: 30m
+    response: pause
+    message: Agent has touched an unusually broad set of tables.
+
+  # --- budget drain ----------------------------------------------------
+  - name: api-budget-drain
+    type: cumulative
+    actions: [billing.charge, llm.completion]
+    aggregate: sum          # sums event.magnitude (dollars)
+    threshold: 50.0
+    window: 1d
+    response: pause
+    message: Daily spend budget exhausted by accumulated small charges.
+
+  # --- rate ------------------------------------------------------------
+  - name: message-flood
+    type: rate
+    actions: [messaging.send]
+    max_calls: 30
+    window: 5m
+    response: break
+    message: Outbound message rate consistent with spam or notification abuse.
+
+  # --- ordering --------------------------------------------------------
+  # Reading customer data is fine. Sending outbound mail is fine. Reading
+  # customer data and THEN sending outbound mail is the exfiltration shape.
+  - name: read-then-exfiltrate
+    type: ordering
+    before: customer_db.query
+    after: messaging.send_external
+    window: 10m
+    response: break
+    message: >
+      External send followed a customer-data read within the correlation
+      window -- possible exfiltration path.
+
+  # --- scope drift ------------------------------------------------------
+  # Defined mechanically as declared-scope escape: the session declares
+  # its resource set, and access outside it is drift. max_outside gives a
+  # tolerance so one stray access is distinguishable from expansion.
+  #
+  # NOTE the `actions` filter. Without it a scope rule also judges the
+  # agent's own infrastructure calls -- LLM completions, internal chat --
+  # as drift, because their resources are not data tables. Scope
+  # constraints must name the actions they govern, or they fire on
+  # ordinary operation. (This was a real false positive; see
+  # bench/benign/legitimate_reporting.py.)
+  - name: resource-scope-drift
+    type: scope
+    actions: [customer_db.query, files.read, files.write]
+    allowed:
+      - customer_db.orders
+      - customer_db.order_items
+      - files/reports
+    max_outside: 3
+    window: 1h
+    response: pause
+    message: >
+      Agent has repeatedly accessed resources outside its declared task
+      scope.
