@@ -92,10 +92,14 @@ def _check_ordering(
 def _check_scope(
     rule: ScopeConstraint, state: SessionState, event: ToolCallEvent
 ) -> tuple[float, bool]:
+    """Fire when more than ``max_outside`` escapes fall in one window.
+
+    Only out-of-scope accesses enter the window, so in-scope traffic costs
+    nothing and cannot dilute the count.
+    """
     if event.resource is None or event.resource in rule.allowed:
         return 0.0, False
-    count = state.outside_scope.get(rule.name, 0) + 1
-    state.outside_scope[rule.name] = count
+    count = state.record(rule.name, rule.window, event).count()
     return float(count), count > rule.max_outside
 
 

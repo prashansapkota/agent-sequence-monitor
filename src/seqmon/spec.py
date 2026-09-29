@@ -19,9 +19,9 @@ Four constraint kinds are supported:
     expressed as the rate denominator. Kept distinct because the intent
     and the reported message differ.
 ``ordering``
-    A forbidden ordered pair: ``after`` must not be followed by ``before``
-    within the window. Expresses "do not read customer records after
-    acquiring external network egress".
+    A forbidden ordered pair: ``before`` must not be followed by ``after``
+    within the window. Expresses "do not send externally shortly after
+    reading customer records".
 ``scope``
     Resources touched must stay within a declared allowlist. See the note
     in ``ScopeConstraint`` about why this is defined mechanically.
@@ -137,6 +137,11 @@ class ScopeConstraint(_Base):
     before the response fires, so a single stray access is distinguishable
     from progressive expansion.
 
+    The tolerance applies per ``window``: the rule fires when more than
+    ``max_outside`` out-of-scope accesses fall inside one window. A long
+    session's occasional strays therefore do not add up forever -- and,
+    symmetrically, drift paced slower than the window is not caught.
+
     This deliberately does not attempt semantic notions of "related to the
     original task" -- that would require a definition of task similarity
     the evaluation could not falsify.
@@ -167,6 +172,51 @@ def _require(raw: dict[str, Any], key: str, rule_name: str) -> Any:
     return raw[key]
 
 
+def _number(
+    raw: dict[str, Any], key: str, rule_name: str, cast: type, default: Any = None
+) -> Any:
+    """Read a numeric field, reporting bad values as ``SpecError``.
+
+    The field is required unless ``default`` is given.
+
+    Without this a typo such as ``max_calls: lots`` escapes as a bare
+    ``ValueError`` from ``int()``, breaking the documented contract that
+    malformed documents raise ``SpecError``.
+    """
+    value = _require(raw, key, rule_name) if default is None else raw.get(key, default)
+    # bool is an int subclass, so ``max_calls: true`` would silently become 1.
+    if isinstance(value, bool):
+        raise SpecError(
+            f"rule {rule_name!r}: field {key!r} must be a number, got {value!r}"
+        )
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        raise SpecError(
+            f"rule {rule_name!r}: field {key!r} must be a number, got {value!r}"
+        ) from None
+
+
+def _str_list(value: Any, key: str, rule_name: str) -> list[str]:
+    """Accept a single string or a list of strings."""
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        raise SpecError(
+            f"rule {rule_name!r}: field {key!r} must be a string or a list, "
+            f"got {value!r}"
+        )
+    # Coercing with str() would turn ``allowed: [null]`` into the resource
+    # "None" -- a silently wrong allowlist rather than a reported error.
+    bad = [v for v in value if not isinstance(v, str)]
+    if bad:
+        raise SpecError(
+            f"rule {rule_name!r}: field {key!r} must contain only strings, "
+            f"got {bad[0]!r}"
+        )
+    return list(value)
+
+
 def _build_rule(raw: dict[str, Any], index: int) -> Constraint:
     if not isinstance(raw, dict):
         raise SpecError(f"rule at index {index} must be a mapping")
@@ -183,8 +233,7 @@ def _build_rule(raw: dict[str, Any], index: int) -> Constraint:
         ) from None
 
     actions = raw.get("actions") or ([raw["action"]] if "action" in raw else [])
-    if isinstance(actions, str):
-        actions = [actions]
+    actions = _str_list(actions, "actions", name)
 
     common = {
         "name": name,
@@ -203,13 +252,13 @@ def _build_rule(raw: dict[str, Any], index: int) -> Constraint:
             ) from None
         return CumulativeConstraint(
             **common,
-            threshold=float(_require(raw, "threshold", name)),
+            threshold=_number(raw, "threshold", name, float),
             aggregate=aggregate,
         )
 
     if kind == "rate":
         return RateConstraint(
-            **common, max_calls=int(_require(raw, "max_calls", name))
+            **common, max_calls=_number(raw, "max_calls", name, int)
         )
 
     if kind == "ordering":
@@ -220,13 +269,11 @@ def _build_rule(raw: dict[str, Any], index: int) -> Constraint:
         )
 
     if kind == "scope":
-        allowed = _require(raw, "allowed", name)
-        if isinstance(allowed, str):
-            allowed = [allowed]
+        allowed = _str_list(_require(raw, "allowed", name), "allowed", name)
         return ScopeConstraint(
             **common,
             allowed=tuple(allowed),
-            max_outside=int(raw.get("max_outside", 0)),
+            max_outside=_number(raw, "max_outside", name, int, default=0),
         )
 
     raise SpecError(
@@ -241,11 +288,25 @@ def load_policy(source: str | Path) -> SequencePolicy:
     Raises:
         SpecError: If the document is malformed.
     """
-    path = Path(source) if not str(source).lstrip().startswith(("-", "{")) else None
-    if path is not None and path.exists():
-        text = path.read_text(encoding="utf-8")
-    else:
-        text = str(source)
+    text = str(source)
+    # Only a single line can be a path. Probing a multi-line YAML document
+    # with Path.exists() raises OSError ("File name too long") once the
+    # document passes the OS filename limit.
+    looks_like_path = isinstance(source, Path) or (
+        "\n" not in text and not text.lstrip().startswith(("-", "{"))
+    )
+    if looks_like_path:
+        path = Path(source)
+        try:
+            is_file = path.is_file()
+        except OSError:
+            is_file = False
+        if is_file:
+            text = path.read_text(encoding="utf-8")
+        elif path.suffix in (".yaml", ".yml"):
+            # Otherwise parsed as a one-word YAML string and reported as
+            # "must be a YAML mapping" -- misleading for a typo'd path.
+            raise SpecError(f"policy file not found: {source}")
 
     raw = yaml.safe_load(text)
     if not isinstance(raw, dict):

@@ -106,7 +106,6 @@ class SessionState:
         self.max_events_per_window = max_events_per_window
         self._windows: dict[str, _Window] = {}
         self.total_events = 0          # lifetime count, for latency reporting
-        self.outside_scope: dict[str, int] = {}   # rule name -> count
         self.last_timestamp: float = 0.0
 
     def window(self, rule_name: str, span: float) -> _Window:

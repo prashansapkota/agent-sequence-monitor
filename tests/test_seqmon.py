@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from seqmon import (
@@ -13,7 +15,7 @@ from seqmon import (
 )
 from seqmon.spec import parse_duration
 
-POLICY = "policies/example.yaml"
+POLICY = Path(__file__).resolve().parents[1] / "policies" / "example.yaml"
 
 
 def ev(action, t, *, magnitude=0.0, resource=None, session="s1"):
@@ -173,6 +175,25 @@ def test_scope_drift_tolerates_then_fires():
     d = mon.observe(ev("files.read", 3, resource="secrets/key_3"))
     assert d.approval_required
     assert d.violations[0].rule == "resource-scope-drift"
+
+
+def test_scope_tolerance_is_per_window_not_lifetime():
+    """Regression: the scope count ignored ``window: 1h`` and accumulated
+    for the whole session, so a long session's occasional strays tripped
+    it eventually. Four strays two hours apart never share a window."""
+    mon = SequenceMonitor.from_file(POLICY, log=False)
+    for i in range(6):
+        assert mon.observe(
+            ev("files.read", i * 7200, resource=f"secrets/key_{i}")
+        ).clean
+
+
+def test_scope_strays_inside_one_window_still_fire():
+    mon = SequenceMonitor.from_file(POLICY, log=False)
+    for i in range(3):
+        assert mon.observe(ev("files.read", i * 1000, resource="secrets/a")).clean
+    # 3,000 s after the first: all four fall inside the 1h window.
+    assert mon.observe(ev("files.read", 3000, resource="secrets/b")).approval_required
 
 
 def test_in_scope_resources_never_fire():
