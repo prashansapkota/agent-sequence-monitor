@@ -418,7 +418,8 @@ def build() -> Path:
          "was built first instead of last: its evaluator was already in the first commit "
          "(96b5b9e). The scenarios are hand-written seeded traces, not traces from the planned "
          "LLM agent with mock tools. And AGT's per-call engine is simulated: the bench scripts "
-         "use hard-coded allow verdicts and the demo uses FakePerCallEngine. I am behind on the “must be "
+         "use hard-coded allow verdicts and the demo uses FakePerCallEngine. I am behind on the "
+         "“must be "
          "preceded by” ordering form.")
 
     # 3 ---------------------------------------------------------------------
