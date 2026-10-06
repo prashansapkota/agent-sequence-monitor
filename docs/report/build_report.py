@@ -117,6 +117,17 @@ def demo_excerpt(width: int = 106) -> list[str]:
 # --------------------------------------------------------------------------
 
 
+def demo_summary(width: int = 100) -> list[str]:
+    """The verdict lines printed at the end of the demo, wrapped to fit the page."""
+    keep = ("Per-call engine alone", "Sequence violation fired", "Session terminated")
+    text = (ROOT / "docs/evidence/demo_output.txt").read_text().splitlines()
+    out: list[str] = []
+    for ln in text:
+        if ln.startswith(keep):
+            out.extend(_wrap(ln, width, 4))
+    return out
+
+
 def set_run_font(run, name: str, size: float | None = None) -> None:
     run.font.name = name
     rpr = run._element.get_or_add_rPr()
@@ -258,12 +269,12 @@ def listing_caption_above(doc, label: str, text: str) -> None:
     p.paragraph_format.keep_with_next = True
 
 
-def figure(doc, path: Path, label: str, text: str) -> None:
+def figure(doc, path: Path, label: str, text: str, width: float = 6.0) -> None:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_with_next = True
     p.paragraph_format.space_after = Pt(0)
-    p.add_run().add_picture(str(path), width=Inches(5.2))
+    p.add_run().add_picture(str(path), width=Inches(width))
     caption(doc, label, text)
 
 
@@ -355,26 +366,24 @@ def build() -> Path:
          "docs/rule_format.md, with four example policies in policies/examples/.",
          lead=True)
     para(doc,
-         "Runtime components. The runtime is 2,133 lines of Python in src/seqmon/. "
-         "ToolCallEvent (events.py) carries the action, session, timestamp, resource, a "
-         "magnitude and named attributes such as records or cost_usd. The state accumulator "
-         "(state.py) keeps one sliding window per rule per session: a deque of events with a "
-         "running sum and a per-resource counter, evicted by timestamp. The incremental "
-         "evaluator (IncrementalEvaluator.on_action in evaluator.py) takes one permitted call, "
-         "updates the windows of the rules it matches, checks them and returns any violations. "
-         "The response layer (response.py) maps each violation to LOG, ESCALATE or TERMINATE "
-         "and calls pluggable EscalationHook and TerminationHook objects; an approved "
-         "escalation re-arms the rule so the next breach asks again. SequenceMonitor "
-         "(monitor.py) wraps these components. src/seqmon/adapters/ defines the PerCallEngine "
-         "and CallFeed interfaces a real AGT hook would implement, a FakePerCallEngine that "
-         "re-implements AGT's flat YAML evaluation, and a FakeAGTInterceptor that chains it "
-         "with the monitor.",
+         "Runtime components. Figure 1 shows where the 2,133 lines of src/seqmon/ sit. Each "
+         "call the per-call policy allows becomes a ToolCallEvent (events.py) and goes to "
+         "IncrementalEvaluator.on_action (evaluator.py), which updates one sliding window per "
+         "rule per session (state.py) and returns violations. response.py maps them to LOG, "
+         "ESCALATE or TERMINATE and calls pluggable EscalationHook and TerminationHook "
+         "objects; an approved escalation re-arms the rule. src/seqmon/adapters/ holds the "
+         "interfaces a real AGT hook would implement and a FakePerCallEngine that "
+         "re-implements AGT's flat YAML evaluation.",
          lead=True)
+    figure(doc, ROOT / "docs/report/figures/architecture.png", "Figure 1.",
+           "Where seqmon sits. Only calls the stateless per-call policy allows reach it; it "
+           "keeps per-session windows and answers each call with LOG, ESCALATE or TERMINATE. "
+           "In this report the per-call box is simulated by FakePerCallEngine.")
     para(doc,
          "Design decisions. Incremental updates: the running sum and the distinct-resource "
          "count change only when an event enters or leaves a window, so no check rescans the "
          "history and the cost per event depends on the number of rules, not on session "
-         "length (Figure 1). To check that shortcut, a naive evaluator (bench/naive.py) "
+         "length (Figure 4). To check that shortcut, a naive evaluator (bench/naive.py) "
          "recomputes every rule from its definition, and property tests compare the "
          "incremental evaluator with an independently written reference on random policies "
          "and traces. Bounded deque: each window holds only events inside its span, plus a "
@@ -442,7 +451,7 @@ def build() -> Path:
     code_block(doc, code_excerpt())
     para(doc, "", space_after=0)
     para(doc,
-         "Listing 3 is the demo. A 32-call synthetic slow-exfiltration trace runs through "
+         "Figure 2 is the demo. A 32-call synthetic slow-exfiltration trace runs through "
          "FakeAGTInterceptor with one combined policy file. Its per-call rule denies any single "
          "query over 1,000 rows, but the agent pages 400 rows at a time, so every call is "
          "allowed. The scope rule escalates at step 7, and the cumulative rule terminates the "
@@ -453,29 +462,39 @@ def build() -> Path:
          "my re-implementation of AGT's flat YAML evaluation, not from the AGT toolkit itself. "
          "It agreed with AGT's real PolicyEvaluator on all 36 calls I compared, but only 4 of "
          "those matched a rule, so the per-call side should be read as simulated.")
-    listing_caption_above(doc, "Listing 3.",
-                          "Excerpt of docs/evidence/demo_output.txt (rows omitted, column "
-                          "padding reduced, long lines wrapped).")
-    code_block(doc, demo_excerpt(), size=7)
+    figure(doc, ROOT / "docs/report/figures/demo_timeline.png", "Figure 2.",
+           "Customer rows read at each step of scripts/demo_trace.py, computed by replaying the "
+           "same trace three ways. Grey: per-call engine alone. Blue: with seqmon, escalations "
+           "approved, so the cumulative rule terminates at step 17. Orange: with seqmon and "
+           "the step-7 escalation denied (--deny-escalations), so the session stops there.")
+    listing_caption_above(doc, "Listing 3.", "Summary lines of docs/evidence/demo_output.txt.")
+    code_block(doc, demo_summary(), size=7.5)
     para(doc, "", space_after=0)
     para(doc,
-         "Testing and results. The suite has 426 tests in 12 files: 412 pass and 14 are "
-         "strict expected failures tied to nine bugs logged in BUGS.md. Statement coverage of "
-         "seqmon is 96% (823 statements, 33 missed; docs/evidence/coverage.txt), and ruff and "
-         "strict mypy report no issues. On the scripted suites the monitor detected 11 of 11 "
+         "Testing and results. Figure 3 is the test run: 426 tests in 12 files, of which 412 "
+         "pass and 14 are strict expected failures tied to nine bugs logged in BUGS.md, with "
+         "96% statement coverage and clean ruff and strict mypy checks. On the scripted "
+         "suites the monitor detected 11 of 11 "
          "adversarial scenarios and 2 of 10 evasion scenarios, with no alert on the 9 benign "
-         "ones. In experiments/overhead.py, a naive evaluator that rescans the "
+         "ones (Figure 5). In experiments/overhead.py, a naive evaluator that rescans the "
          "history took 10,491 µs per event at 100,000 events against 3.6 µs for the "
-         "incremental one. Figure 1 comes from a separate script, bench/overhead.py, which "
+         "incremental one. Figure 4 comes from a separate script, bench/overhead.py, which "
          "measures the incremental evaluator alone, hence its slightly lower figures. All "
          "timings are single uncontrolled runs on one machine.",
          lead=True)
-    figure(doc, ROOT / "bench/results/overhead.png", "Figure 1.",
+    figure(doc, ROOT / "docs/report/figures/test_evidence.png", "Figure 3.",
+           "Test, coverage and lint results (pytest and coverage lines from "
+           "docs/evidence/test_run.txt and coverage.txt; ruff and mypy run when the figure "
+           "was built).", width=5.0)
+    figure(doc, ROOT / "bench/results/overhead.png", "Figure 4.",
            "Monitor overhead against session length (bench/overhead.py; 6-rule example "
            "policy, 1 event/s, Apple M1, CPython 3.12.7). Left: evaluation time stays between "
            "2.3 and 2.6 µs per event from 100 to 100,000 events. Right: memory reaches "
            "3,369 KiB because the policy's one-day window has not yet filled; the 12,050 "
-           "retained events are within the 6 × 10,000 bound.")
+           "retained events are within the 6 × 10,000 bound.", width=5.5)
+    figure(doc, ROOT / "docs/evidence/figures/detection.png", "Figure 5.",
+           "Detection on the 30 scripted scenarios (experiments/detection.py). Blue: detected "
+           "by any rule; orange: detected first by the rule the scenario targets.", width=5.5)
 
     # 4 ---------------------------------------------------------------------
     heading(doc, "4. Challenges")
