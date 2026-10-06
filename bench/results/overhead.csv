@@ -1,0 +1,5 @@
+session_events,us_per_event_mean,us_per_event_tail,tracemalloc_current_kib,tracemalloc_peak_kib,retained_events
+100,2.388,2.385,38.6,39.0,135
+1000,2.295,2.295,187.4,187.8,1085
+10000,2.411,2.435,892.9,893.3,3717
+100000,2.522,2.591,3369.0,3369.7,12050

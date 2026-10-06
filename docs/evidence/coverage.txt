@@ -1,0 +1,17 @@
+$ .venv/bin/python -m pytest --cov=seqmon --cov-report=term-missing   # run 2026-10-06 12:30 CDT
+_______________ coverage: platform darwin, python 3.12.7-final-0 _______________
+
+Name                              Stmts   Miss  Cover   Missing
+---------------------------------------------------------------
+src/seqmon/__init__.py                8      0   100%
+src/seqmon/adapters/__init__.py       3      0   100%
+src/seqmon/adapters/base.py          24      0   100%
+src/seqmon/adapters/fake_agt.py     140     21    85%   71, 73, 75, 79, 81, 83, 86-88, 105, 111, 114, 117, 120, 123, 127, 130, 133, 146, 149, 259
+src/seqmon/evaluator.py             159      4    97%   166, 178, 190, 327
+src/seqmon/events.py                 31      1    97%   81
+src/seqmon/monitor.py                39      0   100%
+src/seqmon/response.py               73      0   100%
+src/seqmon/spec.py                  234      6    97%   502, 507, 529, 547, 589-590
+src/seqmon/state.py                 112      1    99%   149
+---------------------------------------------------------------
+TOTAL                               823     33    96%

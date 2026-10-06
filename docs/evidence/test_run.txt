@@ -1,0 +1,44 @@
+$ .venv/bin/python -m pytest --cov=seqmon --cov-report=term-missing   # run 2026-10-06 12:30 CDT, HEAD ec4b486 + working tree
+============================= test session starts ==============================
+platform darwin -- Python 3.12.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/prashansapkota/Documents/research
+configfile: pyproject.toml
+testpaths: tests
+plugins: hypothesis-6.168.5, cov-7.1.0
+collected 426 items
+
+tests/test_bench.py ...............................................      [ 11%]
+tests/test_cumulative.py ....................xxx                         [ 16%]
+tests/test_property_incremental.py ....                                  [ 17%]
+tests/test_rate.py ................x..                                   [ 21%]
+tests/test_response.py ...............................                   [ 29%]
+tests/test_review_fixes.py ............................................. [ 39%]
+.......................................                                  [ 48%]
+tests/test_review_regressions.py .....................xx.                [ 54%]
+tests/test_rule_parsing.py ............................................. [ 65%]
+.........................................................xxxxxxx         [ 80%]
+tests/test_seqmon.py ................................                    [ 87%]
+tests/test_smoke.py ..............                                       [ 90%]
+tests/test_spec_response.py ...............................              [ 98%]
+tests/test_state_bounds.py .......x                                      [100%]
+
+
+======================= 412 passed, 14 xfailed in 33.35s =======================
+
+$ .venv/bin/python -m pytest -q -rx   # xfail reasons
+=========================== short test summary info ============================
+XFAIL tests/test_cumulative.py::test_decimal_charges_summing_exactly_to_threshold_do_not_fire - BUG-001: running float sum overshoots; 500 x $0.10 against a $50 threshold fires (observed 50.00000000000044)
+XFAIL tests/test_cumulative.py::test_three_tenths_at_threshold_point_three_do_not_fire - BUG-001: 0.1 + 0.1 + 0.1 > 0.3 in the running sum
+XFAIL tests/test_cumulative.py::test_residue_after_eviction_does_not_fire_a_zero_threshold - BUG-002: eviction leaves a float residue (1.1e-16) when the remaining in-window events sum to exactly 0
+XFAIL tests/test_rate.py::test_rule_that_cannot_fire_under_the_cap_is_rejected - BUG-006: a rate rule whose max_calls >= the per-window cap can never fire, and nothing rejects or warns
+XFAIL tests/test_review_regressions.py::test_R3_m1_lagging_stamps_do_not_drop_live_session - BUG-007 (REVIEW R3-m1): with a clock, a stamp lagging the clock by > max_clock_skew lets the sweep drop a live session; breach missed, clamped_events stays 0
+XFAIL tests/test_review_regressions.py::test_R3_m2_nan_idle_ttl_is_rejected - BUG-008 (REVIEW R3-m2): idle_ttl=NaN is accepted and silently disables expiry
+XFAIL tests/test_rule_parsing.py::test_falsy_non_string_or_empty_name_is_rejected[0] - BUG-003: falsy rule name silently replaced by 'rule_<i>'
+XFAIL tests/test_rule_parsing.py::test_falsy_non_string_or_empty_name_is_rejected[] - BUG-003: falsy rule name silently replaced by 'rule_<i>'
+XFAIL tests/test_rule_parsing.py::test_falsy_non_string_or_empty_name_is_rejected[False] - BUG-003: falsy rule name silently replaced by 'rule_<i>'
+XFAIL tests/test_rule_parsing.py::test_verb_spellings_are_case_insensitive_like_severity_names[WARN] - BUG-004: 'LOG' is accepted but 'WARN'/'PAUSE'/'BREAK' are rejected (case handled only for severity names)
+XFAIL tests/test_rule_parsing.py::test_verb_spellings_are_case_insensitive_like_severity_names[Pause] - BUG-004: 'LOG' is accepted but 'WARN'/'PAUSE'/'BREAK' are rejected (case handled only for severity names)
+XFAIL tests/test_rule_parsing.py::test_verb_spellings_are_case_insensitive_like_severity_names[BREAK] - BUG-004: 'LOG' is accepted but 'WARN'/'PAUSE'/'BREAK' are rejected (case handled only for severity names)
+XFAIL tests/test_rule_parsing.py::test_empty_string_actions_is_rejected - BUG-005: actions: '' (empty string) silently means 'every action' instead of being rejected
+XFAIL tests/test_state_bounds.py::test_many_sessions_bounded_in_default_configuration - BUG-009 (documented limitation): with the default configuration (no clock, no shared_time_base) sessions that never return are never dropped
+412 passed, 14 xfailed in 11.31s
