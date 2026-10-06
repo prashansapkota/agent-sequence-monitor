@@ -514,7 +514,8 @@ def build() -> Path:
          "tests exposed nine bugs. The most serious, BUG-006, is that a rule needing more "
          "events than the per-window cap can never fire, and nothing reports it. BUG-001/002 "
          "are floating-point drift in the running sum: 500 charges of $0.10 add up to "
-         "50.00000000000044, so a $50 limit fires even though spending only reaches it. Earlier engineering problems are resolved: the parser accepted "
+         "50.00000000000044, so a $50 limit fires even though spending only reaches it. "
+         "Earlier engineering problems are resolved: the parser accepted "
          "booleans as numbers (now a SpecError), tests failed outside the repository root "
          "(paths now relative to __file__), and macOS hides the venv's editable-install .pth "
          "file, so scripts and pytest put src/ on the path.",
