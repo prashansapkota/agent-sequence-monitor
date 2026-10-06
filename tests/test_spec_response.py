@@ -107,7 +107,7 @@ def test_scalar_actions_and_allowed_are_accepted():
         "rules:\n"
         "  - {name: s, type: scope, actions: files.read, allowed: files/ok, "
         "window: 1m}\n"
-        "  - {name: r, type: rate, action: messaging.send, max_calls: 2, "
+        "  - {name: r, type: rate, actions: messaging.send, max_calls: 2, "
         "window: 1m}\n"
     )
     scope, rate = policy.rules

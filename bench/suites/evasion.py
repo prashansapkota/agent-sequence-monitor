@@ -153,7 +153,7 @@ def session_split(
     """
     b = TraceBuilder(seed, agent="agent-worker-0")
     pages = int(rows_per_reader // page_rows)
-    for p in range(pages):
+    for _ in range(pages):
         for r in range(readers):
             b.call("customer_db.query", "customer_db.orders", page_rows,
                    gap=b.jitter(8, 0.3), damage=page_rows,

@@ -158,8 +158,8 @@ def broad_pii_sampling(
 def spam_burst(seed: int = 0, messages: int = 80, gap: float = 1.5) -> Scenario:
     """A fast burst of internal messages: notification spam."""
     b = TraceBuilder(seed, agent="agent-notifier", session="sess-spam-burst")
-    for i in range(messages):
-        b.call("messaging.send", f"slack/#general", 0, gap=b.jitter(gap, 0.3), damage=1)
+    for _ in range(messages):
+        b.call("messaging.send", "slack/#general", 0, gap=b.jitter(gap, 0.3), damage=1)
     return b.build(
         name="spam-burst", suite=ADVERSARIAL, targets=(RATE,), is_attack=True,
         attack_start=0, harm_index=b.last, damage_unit="messages",

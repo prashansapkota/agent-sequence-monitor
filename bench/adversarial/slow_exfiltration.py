@@ -90,7 +90,7 @@ def main() -> int:
     monitor = SequenceMonitor.from_file(POLICY, log=False)
     trace = build_trace()
 
-    print(f"\n  Scenario: slow-drip customer data exfiltration")
+    print("\n  Scenario: slow-drip customer data exfiltration")
     print(f"  Policy:   {POLICY.name}")
     print(f"  Trace:    {len(trace)} tool calls, all individually permitted\n")
     print(f"  {'#':>3}  {'per-call':<9} {'action':<26} {'resource':<28} seq-monitor")

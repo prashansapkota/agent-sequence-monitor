@@ -90,7 +90,7 @@ def plot(bulk: list[dict], flood: list[dict]) -> None:
         ys = [r["family_mean_damage"] for r in rows]
         ax.plot(xs, ys, color=color, lw=1.5, zorder=2)
         ax.scatter(xs, ys, s=40, color=color, edgecolor="white", linewidth=1, zorder=3)
-        for i, (x, y, r) in enumerate(zip(xs, ys, rows)):
+        for i, (x, y, r) in enumerate(zip(xs, ys, rows, strict=True)):
             # The two lowest settings sit close together; drop the first label.
             ax.annotate(fmt(r["setting"]), (x, y), xytext=(7, -9 if i == 0 else -1),
                         textcoords="offset points", fontsize=8, color=INK_2)
@@ -106,8 +106,9 @@ def plot(bulk: list[dict], flood: list[dict]) -> None:
         ax.set_ylim(0, None)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
     fig.text(0.01, -0.04,
-             "Each point is one threshold setting (labelled). Damage is averaged over an attack family "
-             "of increasing speed; a missed attack counts its full damage\n(20,000 rows or 200 messages). "
+             "Each point is one threshold setting (labelled). Damage is averaged over an "
+             "attack family of increasing speed; a missed attack counts its full damage\n"
+             "(20,000 rows or 200 messages). "
              "Lower-left is better. Circled: the example policy's setting.",
              fontsize=8, color=INK_2)
     fig.tight_layout(w_pad=3)

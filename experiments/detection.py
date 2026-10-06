@@ -87,7 +87,7 @@ def plot(rows: list[dict]) -> None:
     fig, ax = plt.subplots(figsize=(7.2, 4.2))
     ys = list(range(len(rows)))[::-1]
     h = 0.36
-    for y, row in zip(ys, rows):
+    for y, row in zip(ys, rows, strict=True):
         n = row["n"]
         ax.barh(y + h / 2, 100 * row["rate_any"], height=h - 0.04, color=BLUE,
                 label="Any rule" if y == ys[0] else None)

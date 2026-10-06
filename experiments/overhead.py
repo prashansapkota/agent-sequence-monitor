@@ -30,7 +30,18 @@ from __future__ import annotations
 import platform
 import time
 
-from _common import BLUE, INK_2, ORANGE, SEED, policy, print_table, pyplot, save, write_csv, write_json
+from _common import (
+    BLUE,
+    INK_2,
+    ORANGE,
+    SEED,
+    policy,
+    print_table,
+    pyplot,
+    save,
+    write_csv,
+    write_json,
+)
 
 from bench.naive import NaiveEvaluator
 from bench.suites import all_scenarios
@@ -143,9 +154,11 @@ def plot(rows: list[dict]) -> None:
         ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.6g}"))
     a1.legend(["naive rescan", "incremental (seqmon)"], loc="upper left", fontsize=8)
-    fig.text(0.01, -0.07, "Synthetic stream, 1 event/s, six-rule example policy. Microbenchmark of the "
-             "monitoring layer only, single machine.\nIncremental memory counts one entry per rule window, "
-             "so an event can be held up to three times; it plateaus at the sum of the window spans.",
+    fig.text(0.01, -0.07,
+             "Synthetic stream, 1 event/s, six-rule example policy. Microbenchmark of the "
+             "monitoring layer only, single machine.\nIncremental memory counts one entry "
+             "per rule window, so an event can be held up to three times; it plateaus at the "
+             "sum of the window spans.",
              fontsize=8, color=INK_2)
     fig.tight_layout(w_pad=3)
     save(fig, "overhead.png")

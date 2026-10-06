@@ -10,8 +10,9 @@ from __future__ import annotations
 import csv
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 for _p in (ROOT / "src", ROOT):
@@ -66,7 +67,8 @@ def print_table(headers: list[str], rows: Iterable[list[Any]], align: str | None
 
     def fmt(cells: list[str]) -> str:
         return "  ".join(
-            c.rjust(w) if a == "r" else c.ljust(w) for c, w, a in zip(cells, widths, align)
+            c.rjust(w) if a == "r" else c.ljust(w)
+            for c, w, a in zip(cells, widths, align, strict=False)
         )
 
     print("  " + fmt(headers))

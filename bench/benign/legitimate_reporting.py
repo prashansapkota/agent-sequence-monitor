@@ -70,7 +70,7 @@ def main() -> int:
     spend = sum(e.magnitude for e in trace if e.action == "llm.completion")
     span = (trace[-1].timestamp - trace[0].timestamp) / HOUR
 
-    print(f"\n  Scenario: legitimate scheduled reporting agent")
+    print("\n  Scenario: legitimate scheduled reporting agent")
     print(f"  Policy:   {POLICY.name}\n")
     print(f"    duration            {span:.1f} simulated hours")
     print(f"    tool calls          {len(trace)}")

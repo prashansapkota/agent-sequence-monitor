@@ -17,9 +17,16 @@ incremental evaluator sheds the oldest events once a window holds more than
 ``max_events_per_window``; the naive one never does. Traces that exceed the
 backstop can therefore diverge -- ``bench/suites/evasion.py`` has one that
 does so deliberately.
+
+It applies the same input contract as the incremental evaluator (see
+``seqmon.evaluator``), written out directly: a late timestamp is raised to
+the session's latest one, and a session idle for at least the longest
+rule window forgets which rules have already fired.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 from seqmon import (
     Aggregate,
@@ -43,9 +50,19 @@ class NaiveEvaluator:
         self.policy = policy
         self.history: list[ToolCallEvent] = []
         self._fired: set[tuple[str, str]] = set()
+        self._last: dict[str, float] = {}
+        self._idle_ttl = max((r.window for r in policy.rules), default=0.0)
 
     def observe(self, event: ToolCallEvent) -> list[tuple[str, float]]:
         """Return ``(rule name, observed value)`` for each new violation."""
+        sid = event.session_id
+        last = self._last.get(sid)
+        if last is not None:
+            if event.timestamp < last:
+                event = replace(event, timestamp=last)
+            elif self._idle_ttl > 0 and event.timestamp - last >= self._idle_ttl:
+                self._fired = {k for k in self._fired if k[0] != sid}
+        self._last[sid] = event.timestamp
         self.history.append(event)
         now = event.timestamp
         out: list[tuple[str, float]] = []
@@ -64,7 +81,7 @@ class NaiveEvaluator:
             if isinstance(rule, CumulativeConstraint):
                 hits = [e for e in live if rule.matches_action(e.action)]
                 if rule.aggregate is Aggregate.SUM:
-                    observed = sum(e.magnitude for e in hits)
+                    observed = sum(e.value(rule.attribute) for e in hits)
                 elif rule.aggregate is Aggregate.COUNT:
                     observed = float(len(hits))
                 else:

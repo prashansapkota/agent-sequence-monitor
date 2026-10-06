@@ -19,7 +19,6 @@ from bench.benign.legitimate_reporting import build_trace as _reporting_trace
 from bench.scenario import (
     BENIGN,
     CUMULATIVE_SUM,
-    HOUR,
     MINUTE,
     ORDERING,
     RATE,
