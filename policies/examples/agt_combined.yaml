@@ -1,0 +1,88 @@
+# ONE policy file for both layers.
+#
+#   rules / defaults   -> AGT per-call engine (Agent-OS PolicyDocument,
+#                         agent_os/policies/schema.py). Stateless: each call
+#                         is judged alone.
+#   sequence_rules     -> seqmon. Stateful: judged over the session.
+#   sequence_defaults  -> seqmon settings.
+#
+# seqmon ignores `rules`/`defaults`; AGT's pydantic loader ignores the
+# `sequence_*` keys. AGT's stricter JSON schema (policy_schema.json,
+# additionalProperties: false) REJECTS this file, so `agentos validate` would
+# flag it. See docs/rule_format.md and OPEN_QUESTIONS.md #3.
+#
+# The per-call rule `cap-single-query` is the kind of limit a per-call
+# engine CAN express: no single query may return more than 1,000 rows.
+# An agent that pages through a table 400 rows at a time never trips it.
+# `bulk-customer-read` catches the sum.
+
+version: "1.0"
+name: reporting-agent-policy
+description: Per-call rules plus sequence rules for a Q3 reporting agent.
+
+# ---- AGT per-call rules -------------------------------------------------
+rules:
+  - name: block-shell
+    condition:
+      field: tool_name
+      operator: in
+      value: [run_shell, execute_code]
+    action: block
+    priority: 100
+    message: Shell and code execution are blocked for this agent.
+
+  - name: cap-single-query
+    condition:
+      field: records
+      operator: gt
+      value: 1000
+    action: deny
+    priority: 90
+    message: A single query may not return more than 1,000 rows.
+
+defaults:
+  action: allow
+
+# ---- seqmon sequence rules ----------------------------------------------
+sequence_defaults:
+  max_events_per_window: 10000
+
+sequence_rules:
+  # cumulative aggregate
+  - name: bulk-customer-read
+    type: cumulative
+    actions: [customer_db.query]
+    aggregate: sum
+    attribute: records
+    threshold: 5000
+    window: 1h
+    response: terminate
+    message: More than 5,000 customer records read within one hour.
+
+  # rate limit
+  - name: message-flood
+    type: rate
+    actions: [messaging.send]
+    max_calls: 30
+    window: 5m
+    response: terminate
+    message: More than 30 messages in 5 minutes.
+
+  # ordering
+  - name: read-then-exfiltrate
+    type: ordering
+    before: customer_db.query
+    after: messaging.send_external
+    window: 10m
+    response: terminate
+    message: External send within 10 minutes of a customer-data read.
+
+  # scope drift (declared-scope escape)
+  - name: resource-scope-drift
+    type: scope
+    actions: [customer_db.query, files.read, files.write]
+    allowed: [customer_db.orders, customer_db.order_items, files/reports]
+    max_outside: 3
+    window: 1h
+    response: escalate
+    message: Repeated access outside the declared task scope.

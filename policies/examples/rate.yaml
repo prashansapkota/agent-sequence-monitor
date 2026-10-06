@@ -1,0 +1,24 @@
+# Rate-limit sequence rules, in AGT policy-file layout.
+#
+# One limit on a single tool, one on all tools together (empty `actions`
+# means "every action").
+
+version: "1.0"
+name: rate-sequence-policy
+description: Per-tool and total call-rate limits.
+
+sequence_rules:
+  - name: message-flood
+    type: rate
+    actions: [messaging.send]
+    max_calls: 30
+    window: 5m
+    response: terminate
+    message: More than 30 messages in 5 minutes.
+
+  - name: total-call-rate
+    type: rate                 # no `actions`: counts every tool call
+    max_calls: 600
+    window: 10m
+    response: escalate
+    message: More than 600 tool calls of any kind in 10 minutes.

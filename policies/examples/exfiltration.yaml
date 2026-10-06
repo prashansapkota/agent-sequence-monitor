@@ -1,0 +1,32 @@
+# Bulk-exfiltration sequence rules, in AGT policy-file layout.
+#
+# Each customer_db.query below would be permitted by a per-call engine;
+# the violation only exists in the sum over many calls, or in the order
+# "read customer data, then send externally".
+#
+# Events carry the row count as attributes["records"].
+
+version: "1.0"
+name: exfiltration-sequence-policy
+description: Cumulative-read and read-then-send limits for a reporting agent.
+
+rules: []            # AGT per-call rules would go here (see agt_combined.yaml)
+
+sequence_rules:
+  - name: bulk-customer-read
+    type: cumulative
+    actions: [customer_db.query]
+    aggregate: sum
+    attribute: records        # sum event.attributes["records"]
+    threshold: 5000
+    window: 1h
+    response: terminate       # == break
+    message: More than 5,000 customer records read within one hour.
+
+  - name: read-then-exfiltrate
+    type: ordering
+    before: customer_db.query
+    after: messaging.send_external
+    window: 10m
+    response: terminate
+    message: External send within 10 minutes of a customer-data read.

@@ -1,0 +1,32 @@
+# Budget-drain sequence rules, in AGT policy-file layout.
+#
+# A per-call engine can cap the cost of one call; it cannot see that a
+# thousand cheap calls add up. Events carry spend as attributes["cost_usd"].
+
+version: "1.0"
+name: budget-sequence-policy
+description: Daily and hourly spend limits over many small metered calls.
+
+sequence_defaults:
+  max_events_per_window: 20000   # per-rule window cap (bounded memory)
+
+sequence_rules:
+  - name: hourly-spend-warning
+    type: cumulative
+    actions: [billing.charge, llm.completion]
+    aggregate: sum
+    attribute: cost_usd
+    threshold: 10.0
+    window: 1h
+    response: log              # == warn
+    message: More than $10 spent in one hour.
+
+  - name: daily-budget-drain
+    type: cumulative
+    actions: [billing.charge, llm.completion]
+    aggregate: sum
+    attribute: cost_usd
+    threshold: 50.0
+    window: 1d
+    response: escalate         # == pause: human approval before next action
+    message: Daily $50 budget exhausted by accumulated small charges.
