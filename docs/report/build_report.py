@@ -466,7 +466,9 @@ def build() -> Path:
          "adversarial scenarios and 2 of 10 evasion scenarios, with no alert on the 9 benign "
          "ones. In experiments/overhead.py, a naive evaluator that rescans the "
          "history took 10,491 µs per event at 100,000 events against 3.6 µs for the "
-         "incremental one. All timings are single uncontrolled runs on one machine.",
+         "incremental one. Figure 1 comes from a separate script, bench/overhead.py, which "
+         "measures the incremental evaluator alone, hence its slightly lower figures. All "
+         "timings are single uncontrolled runs on one machine.",
          lead=True)
     figure(doc, ROOT / "bench/results/overhead.png", "Figure 1.",
            "Monitor overhead against session length (bench/overhead.py; 6-rule example "
@@ -482,7 +484,8 @@ def build() -> Path:
          "evasion scenarios are missed: they stay under thresholds, hop between windows, split "
          "across sessions, pace sends or strays just outside a window, or stay under the daily "
          "budget, which are limits of fixed-threshold, fixed-window, per-session rules. One, "
-         "backstop-flush, pads the window with about 1,000 zero-row calls so the 10,000-event "
+         "backstop-flush, pads the window with about 1,000 zero-row calls between each real "
+         "read (12,000 in total) so the 10,000-event "
          "cap pushes the damaging events out. This is open; the options (never shed events "
          "that carry magnitude, or alert when shedding starts) are in OPEN_QUESTIONS.md.",
          lead=True)
@@ -510,8 +513,8 @@ def build() -> Path:
          "Bugs from the test pass are still open. New boundary, property and state-bound "
          "tests exposed nine bugs. The most serious, BUG-006, is that a rule needing more "
          "events than the per-window cap can never fire, and nothing reports it. BUG-001/002 "
-         "are floating-point drift in the running sum: 500 charges of $0.10 fire a $50 limit "
-         "they only reach. Earlier engineering problems are resolved: the parser accepted "
+         "are floating-point drift in the running sum: 500 charges of $0.10 add up to "
+         "50.00000000000044, so a $50 limit fires even though spending only reaches it. Earlier engineering problems are resolved: the parser accepted "
          "booleans as numbers (now a SpecError), tests failed outside the repository root "
          "(paths now relative to __file__), and macOS hides the venv's editable-install .pth "
          "file, so scripts and pytest put src/ on the path.",
