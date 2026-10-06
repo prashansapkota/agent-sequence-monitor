@@ -1,5 +1,39 @@
 # seqmon — Detecting Cumulative Policy Violations in Autonomous AI Agents
 
+## Quickstart
+
+Requires Python 3.10+ (tested on 3.10.11 and 3.12.7). From a fresh clone:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"            # add ,experiments for matplotlib
+
+python scripts/demo_trace.py       # every call passes per-call policy; the sequence does not
+pytest                             # 208 tests
+ruff check .                       # lint
+mypy src                           # strict type check
+```
+
+`scripts/demo_trace.py` replays a 32-call synthetic trace through
+`FakeAGTInterceptor`. A stand-in for the AGT per-call engine evaluates the
+`rules` of `policies/examples/agt_combined.yaml`, and `SequenceMonitor`
+evaluates the `sequence_rules` of the same file. All 17 calls that reach the
+per-call engine are allowed. The scope rule escalates from step 7 (the demo has
+no human approver, so it auto-approves and says so; `--deny-escalations` ends
+the session there instead). The cumulative rule fires at **step 17** (5,260
+rows > 5,000), and the remaining 15 calls, including the external send, are
+refused.
+
+**Progress Report 1** (2026-10-06): [`docs/progress_report_1.md`](docs/progress_report_1.md).
+
+> **macOS note.** If `import seqmon` fails with `ModuleNotFoundError` after an
+> editable install, check `ls -lO .venv/lib/python3.*/site-packages/*.pth`. macOS
+> can mark the editable-install `.pth` file `hidden`, and Python then skips it.
+> `chflags nohidden <file>` restores it. The scripts in `bench/`,
+> `experiments/` and `scripts/` and the pytest config put `src/` on the path
+> themselves, so they work either way.
+
 A stateful sequence-monitoring layer for agent governance. It **complements
 rather than replaces** a per-call policy engine: the engine keeps deciding
 individual tool invocations, and this layer observes the same stream of
@@ -25,7 +59,10 @@ and never consulted for policy decisions — the module documents that "the kern
 never looks up prior requests."
 
 **Baseline:** [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit)
-@ `5ed63c6e`, `agent_os_kernel` v3.5.0.
+`agent_os_kernel` v3.5.0 (tag `v3.5.0`, `889c70ce`). The commit this README
+used to pin, `5ed63c6e`, is not in the public repository. See
+`OPEN_QUESTIONS.md` and `docs/agt_integration.md` for what was verified in the
+AGT source and what was not.
 
 ## Research questions
 
@@ -49,9 +86,21 @@ the alert fired.
 | `scope` | Access outside a declared resource allowlist | `allowed`, `max_outside` |
 
 Responses reuse the toolkit's existing vocabulary: `warn` (log), `pause`
-(require human approval), `break` (terminate the session).
+(require human approval), `break` (terminate the session). The severity names
+`log` / `escalate` / `terminate` are accepted as synonyms (`Response.LOG is
+Response.WARN`). Escalation and termination call pluggable `EscalationHook` /
+`TerminationHook` objects. The defaults do nothing (`NoOpHooks`); `LoggingHooks`
+logs only.
+
+The full rule format, with one example per type, is in
+[`docs/rule_format.md`](docs/rule_format.md).
 
 ## Example
+
+Sequence rules can live in the same file as AGT per-call rules, under
+`sequence_rules:` (`policies/examples/agt_combined.yaml`). The original
+standalone layout below, with sequence rules under `rules:`, still loads
+(`policies/example.yaml`, used by `bench/` and the experiments).
 
 ```yaml
 version: "1.0"
@@ -80,11 +129,12 @@ from seqmon import SequenceMonitor, ToolCallEvent
 monitor = SequenceMonitor.from_file("policies/example.yaml")
 
 # In the tool-call interceptor, AFTER the per-call engine permits the call:
-decision = monitor.observe(event)
+decision = monitor.on_action(event)        # `observe` is the same method
 if decision.terminate:
     raise SessionTerminated(decision.violations[0].describe())
 if decision.approval_required:
-    await request_human_approval(decision)
+    if await request_human_approval(decision):
+        monitor.approve(event.session_id, decision.violations)  # re-arms the rule
 ```
 
 ## Worked example
@@ -125,35 +175,50 @@ alerts, because the distinguishing signal is sequence shape, not volume.
 
 Two structural claims, both covered by tests:
 
-**Bounded memory.** State is bounded by window span and rule count, never by
-session length. Events live in per-rule deques evicted by window expiry, with
-`max_events` as a hard backstop. An agent running unattended for hours must not
-grow the monitor without limit.
+**Bounded memory.** Per session, state is bounded by window span and rule
+count (at most rules x `max_events_per_window` events), never by session
+length. Events live in per-rule deques evicted by window expiry, with
+`max_events` as a hard backstop. A session that returns after more than the
+policy's longest window starts fresh, and the in-memory violation history
+keeps the last 1,000 entries by default. Sessions that never return are
+swept only when the monitor has a shared notion of "now": a `clock`
+(`SequenceMonitor(policy, clock=time.time)`), or `shared_time_base=True` when
+every session's timestamps come from one trusted time base. By default there
+is neither, so the number of held sessions grows with the number of
+abandoned sessions. (An earlier version swept on the arriving event's
+timestamp, which let one session's far-future stamp wipe the others; see
+`WORKLOG.md`, 2026-10-06, R2-M1.) `FakeAGTInterceptor.terminated` also grows
+(one id per terminated session, needed to keep refusing its calls).
 
 **O(rules) per event.** No aggregate rescans its window. Magnitude sums and
 distinct-resource counts are both maintained incrementally, adjusted on insert
 and on eviction.
 
 Measured at 1 event/sec against the 6-rule example policy
-(`experiments/overhead.py`, CPython 3.12.7, arm64), alongside a naive
-baseline that rescans the whole session history on every event:
+(`experiments/overhead.py`, CPython 3.12.7, arm64, one run on 2026-10-06 after
+the review fixes), alongside a naive baseline that rescans the whole session
+history on every event:
 
 | Events | Retained | µs/event (marginal) | Naive rescan µs/event |
 |---:|---:|---:|---:|
-| 1,000 | 2,600 | 2.7 | 375 |
-| 5,000 | 6,000 | 3.3 | 1,102 |
-| 20,000 | 6,000 | 3.2 | 2,474 |
-| 100,000 | 6,000 | 3.2 | 10,495 |
+| 1,000 | 2,600 | 3.2 | 396 |
+| 5,000 | 6,000 | 3.5 | 1,221 |
+| 20,000 | 6,000 | 3.4 | 2,560 |
+| 100,000 | 6,000 | 3.4 | 10,135 |
 
 Retention plateaus at 6,000 — the sum of the three window spans (3600 + 1800 +
 600) at one event per second — and cost stays flat two orders of magnitude
 beyond that point. The naive baseline's cost grows linearly with session
-length (3,270x slower at 100,000 events). Timings vary by machine and run.
+length (2,946x slower at 100,000 events). Timings vary by machine and run;
+the 2026-09-28 run gave 2.7-3.3 µs/event.
 
 The naive evaluator doubles as a correctness oracle: it computes each rule
 straight from its definition, and agrees with the incremental evaluator on
-every suite scenario it can replay and on 25 random traces
-(`tests/test_bench.py`). The one divergence is deliberate — see
+every suite scenario it can replay, on 25 random traces
+(`tests/test_bench.py`) and on 20 random traces with late timestamps and
+attribute sums (`tests/test_review_fixes.py`). Both apply the same timestamp
+contract (late events are counted at the session's latest timestamp; see
+`docs/rule_format.md`). The one divergence is deliberate — see
 *`max_events` backstop* under Evaluation.
 
 Eviction is keyed on event timestamps rather than wall clock, so replaying a
@@ -183,13 +248,20 @@ evaluator.)
 
 ```
 src/seqmon/
-  events.py      # ToolCallEvent — the observed stream
-  spec.py        # YAML rule specification + parser
+  events.py      # ToolCallEvent — the observed stream (resource, magnitude, attributes)
+  spec.py        # YAML rule specification + parser (AGT `sequence_rules` or standalone)
   state.py       # session accumulator, bounded windows
-  evaluator.py   # incremental constraint evaluation
-  response.py    # warn / pause / break
+  evaluator.py   # IncrementalEvaluator.on_action (alias SequenceEvaluator.observe)
+  response.py    # LOG/ESCALATE/TERMINATE (warn/pause/break) + hook protocols
   monitor.py     # SequenceMonitor — public entry point
-policies/        # example policies
+  adapters/      # PerCallEngine / CallFeed protocols, FakeAGTInterceptor
+policies/
+  example.yaml   # standalone layout, used by bench/ and experiments/
+  examples/      # AGT layout: exfiltration, budget, rate, agt_combined
+scripts/
+  demo_trace.py        # the demo above
+  check_agt_compat.py  # optional: checks the examples against real AGT source
+docs/            # rule_format.md, agt_integration.md
 bench/
   scenario.py    # Scenario: a trace + ground-truth labels (attack_start, harm_index, damage)
   score.py       # replay a scenario, compute every reported metric
@@ -300,7 +372,7 @@ They measure the mechanism, not real-world prevalence.
 
 ```bash
 pip install -e ".[dev,experiments]"
-pytest                          # 110 tests
+pytest                          # 208 tests
 python experiments/run_all.py   # both worked examples, the suite and all four experiments
 ```
 
@@ -313,12 +385,22 @@ is reproducible exactly.
 
 ## Status
 
-The core layer is implemented and 110 tests pass. This includes a
+The core layer is implemented and 208 tests pass. This includes a
 differential test against a naive oracle, and the tests run from any
 working directory. The scenario suites, scoring harness and four
-experiments are done, and one command regenerates everything.
+experiments are done, and one command regenerates everything. `ruff check .`
+and `mypy src` (strict) are clean. Progress is logged in `WORKLOG.md`. The
+current state and its known weaknesses are in `HANDOFF.md`. Unresolved
+questions are in `OPEN_QUESTIONS.md`.
+
+The AGT per-call engine is **still simulated**. `bench/` uses hard-coded
+`allow` verdicts, and the demo uses `FakeAGTInterceptor`. No real AGT runtime
+hook exists yet (see `docs/agt_integration.md`).
 
 Still to come:
+- a real AGT interceptor (blocked on the open questions about session ids and
+  post-execution result sizes);
+- the "B must be preceded by A" ordering form;
 - the test agent driving fake tools through a hosted LLM, to measure
   end-to-end overhead and non-scripted traces;
 - cross-session correlation, since the session-split evasion is currently
@@ -338,6 +420,8 @@ evaluation phase.
 ```bash
 pip install -e ".[dev]"            # add ,experiments for matplotlib
 pytest
+ruff check .
+mypy src
 ```
 
 ## License
