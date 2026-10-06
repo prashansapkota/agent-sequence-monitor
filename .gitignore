@@ -9,3 +9,5 @@ dist/
 build/
 .coverage
 results/
+!bench/results/
+~$*

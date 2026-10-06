@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "hypothesis>=6.100", "ruff>=0.6", "mypy>=1.10", "types-PyYAML>=6.0"]
 experiments = ["matplotlib>=3.8"]
 
 [tool.hatch.build.targets.wheel]
@@ -21,3 +21,23 @@ packages = ["src/seqmon"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["results"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts put src/ on sys.path before importing seqmon (see README, "macOS .pth").
+"bench/**" = ["E402"]
+"experiments/**" = ["E402"]
+"scripts/**" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+strict = true
+warn_unreachable = true
